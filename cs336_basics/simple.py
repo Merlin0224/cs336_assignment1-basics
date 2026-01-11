@@ -17,7 +17,7 @@ model = TransformerLM(
     d_model=d_model, num_heads=num_heads, d_ff=d_ff, device=device
 ).to(device)
 
-# 加载你保存的最佳检查点
+# 加载保存的最佳检查点
 checkpoint = torch.load("models/best_model.pt", map_location=device)
 model.load_state_dict(checkpoint['model'])
 model.eval()
@@ -28,7 +28,7 @@ tokenizer = Tokenizer.from_files(
     "models/tokenizer_merges.txt", 
     ["<|endoftext|>"]
 )
-eos_id = 256 # 或者是你分配的 ID
+eos_id = 256 
 
 # 4. 开始生成故事
 prompt = "Once upon a time, a little girl named Lily found a magic"

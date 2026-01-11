@@ -1,5 +1,5 @@
 import numpy as np
-from cs336_basics.tokenizer import Tokenizer # 你的分词器类位置
+from cs336_basics.tokenizer import Tokenizer 
 
 def prepare_data(input_file, vocab_file, merges_file, output_file, special_tokens=["<|endoftext|>"]):
     # 1. 加载分词器
@@ -12,7 +12,6 @@ def prepare_data(input_file, vocab_file, merges_file, output_file, special_token
     print(f"正在处理 {input_file}...")
     
     # 2. 读取并编码文本
-    # 对于较大的文件，建议使用你实现的 encode_iterable
     all_ids = []
     with open(input_file, 'r', encoding='utf-8') as f:
         # 如果文件非常大，建议分块处理
@@ -25,7 +24,6 @@ def prepare_data(input_file, vocab_file, merges_file, output_file, special_token
     
     # 4. 保存为二进制文件
     # 使用 tofile 直接保存原始字节，或者使用 np.save
-    # 建议使用 ids_array.tofile，这样后面用 np.memmap 读取最方便
     ids_array.tofile(output_file)
     
     print(f"处理完成！Token 总数: {len(ids_array)}")

@@ -153,88 +153,88 @@ class Tokenizer:
 
 
 
-# def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]):
-#     # 1. 初始化词表：0-255 固定为基础字节 (符合 encode 默认行为)
-#     vocab = {i: bytes([i]) for i in range(256)}
+def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]):
+    # 1. 初始化词表：0-255 固定为基础字节 (符合 encode 默认行为)
+    vocab = {i: bytes([i]) for i in range(256)}
     
-#     # 2. 特殊 Token 从 256 开始编号
-#     current_id = 256
-#     for st in special_tokens:
-#         vocab[current_id] = st.encode("utf-8")
-#         current_id += 1
+    # 2. 特殊 Token 从 256 开始编号
+    current_id = 256
+    for st in special_tokens:
+        vocab[current_id] = st.encode("utf-8")
+        current_id += 1
     
-#     # 3. 读取文本
-#     with open(input_path, "r", encoding="utf-8") as f:
-#         text = f.read()
+    # 3. 读取文本
+    with open(input_path, "r", encoding="utf-8") as f:
+        text = f.read()
 
-#     # 4. 隔离特殊 Token (Page 8)
-#     # 只有非特殊 Token 的文本块参与 BPE 训练
-#     if special_tokens:
-#         # 使用 | 组合所有特殊 token，并用括号捕获以便 split 后保留它们（虽然训练时不直接用它们）
-#         # 但更简单的方法是直接 split，只对剩下的 segment 进行正则表达式分词
-#         pattern = "|".join(re.escape(st) for st in special_tokens)
-#         segments = re.split(pattern, text)
-#     else:
-#         segments = [text]
+    # 4. 隔离特殊 Token (Page 8)
+    # 只有非特殊 Token 的文本块参与 BPE 训练
+    if special_tokens:
+        # 使用 | 组合所有特殊 token，并用括号捕获以便 split 后保留它们（虽然训练时不直接用它们）
+        # 但更简单的方法是直接 split，只对剩下的 segment 进行正则表达式分词
+        pattern = "|".join(re.escape(st) for st in special_tokens)
+        segments = re.split(pattern, text)
+    else:
+        segments = [text]
 
-#     # 5. 预分词计数
-#     word_counts = Counter()
-#     for segment in segments:
-#         if not segment: continue
-#         # 使用 GPT-2 正则表达式 (Page 6)
-#         for word in re.findall(GPT2_PAT, segment):
-#             # 字节直接转为 ID 序列 (0-255)
-#             word_counts[tuple(word.encode("utf-8"))] += 1
+    # 5. 预分词计数
+    word_counts = Counter()
+    for segment in segments:
+        if not segment: continue
+        # 使用 GPT-2 正则表达式 (Page 6)
+        for word in re.findall(GPT2_PAT, segment):
+            # 字节直接转为 ID 序列 (0-255)
+            word_counts[tuple(word.encode("utf-8"))] += 1
 
-#     merges = []
-#     # 目标合并次数 = 最终词表大小 - 当前已有大小
-#     num_merges = vocab_size - len(vocab)
+    merges = []
+    # 目标合并次数 = 最终词表大小 - 当前已有大小
+    num_merges = vocab_size - len(vocab)
     
-#     for _ in range(num_merges):
-#         pair_counts = defaultdict(int)
-#         for word_tuple, count in word_counts.items():
-#             for i in range(len(word_tuple) - 1):
-#                 pair = (word_tuple[i], word_tuple[i+1])
-#                 pair_counts[pair] += count
+    for _ in range(num_merges):
+        pair_counts = defaultdict(int)
+        for word_tuple, count in word_counts.items():
+            for i in range(len(word_tuple) - 1):
+                pair = (word_tuple[i], word_tuple[i+1])
+                pair_counts[pair] += count
         
-#         if not pair_counts:
-#             break
+        if not pair_counts:
+            break
             
-#         # 6. Tie-breaking: 频率相同时，选字节内容字典序最大的 (Page 7)
-#         # 注意：这里比较的是两个 ID 对应的字节块拼接后的内容，或元组级字节比较
-#         best_pair = max(
-#             pair_counts.items(), 
-#             key=lambda x: (x[1], vocab[x[0][0]], vocab[x[0][1]])
-#         )[0]
+        # 6. Tie-breaking: 频率相同时，选字节内容字典序最大的 (Page 7)
+        # 注意：这里比较的是两个 ID 对应的字节块拼接后的内容，或元组级字节比较
+        best_pair = max(
+            pair_counts.items(), 
+            key=lambda x: (x[1], vocab[x[0][0]], vocab[x[0][1]])
+        )[0]
         
-#         p1, p2 = best_pair
-#         new_token_bytes = vocab[p1] + vocab[p2]
-#         vocab[current_id] = new_token_bytes
-#         # merges 存储 bytes 元组
-#         merges.append((vocab[p1], vocab[p2]))
+        p1, p2 = best_pair
+        new_token_bytes = vocab[p1] + vocab[p2]
+        vocab[current_id] = new_token_bytes
+        # merges 存储 bytes 元组
+        merges.append((vocab[p1], vocab[p2]))
         
-#         # 7. 更新 word_counts (只在包含 p1 的单词中进行替换以优化速度)
-#         new_word_counts = Counter()
-#         for word_tuple, count in word_counts.items():
-#             if p1 not in word_tuple:
-#                 new_word_counts[word_tuple] = count
-#                 continue
+        # 7. 更新 word_counts (只在包含 p1 的单词中进行替换以优化速度)
+        new_word_counts = Counter()
+        for word_tuple, count in word_counts.items():
+            if p1 not in word_tuple:
+                new_word_counts[word_tuple] = count
+                continue
                 
-#             new_word_tuple = []
-#             i = 0
-#             while i < len(word_tuple):
-#                 if i < len(word_tuple) - 1 and word_tuple[i] == p1 and word_tuple[i+1] == p2:
-#                     new_word_tuple.append(current_id)
-#                     i += 2
-#                 else:
-#                     new_word_tuple.append(word_tuple[i])
-#                     i += 1
-#             new_word_counts[tuple(new_word_tuple)] = count
+            new_word_tuple = []
+            i = 0
+            while i < len(word_tuple):
+                if i < len(word_tuple) - 1 and word_tuple[i] == p1 and word_tuple[i+1] == p2:
+                    new_word_tuple.append(current_id)
+                    i += 2
+                else:
+                    new_word_tuple.append(word_tuple[i])
+                    i += 1
+            new_word_counts[tuple(new_word_tuple)] = count
         
-#         word_counts = new_word_counts
-#         current_id += 1
+        word_counts = new_word_counts
+        current_id += 1
         
-#     return vocab, merges
+    return vocab, merges
 def _process_chunk(text_chunk):
     """
     进程池中的工人函数：处理一个文本块并返回词频统计

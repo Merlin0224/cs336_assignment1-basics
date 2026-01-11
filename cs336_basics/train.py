@@ -5,7 +5,6 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-# 导入你之前写的组件（请根据你的文件名修改）
 from cs336_basics.model.transformer import TransformerLM
 from cs336_basics.trainer.AdamW import AdamW
 from cs336_basics.trainer.utils import get_lr_cosine_schedule
@@ -24,7 +23,7 @@ d_ff = 1344
 theta = 10000.0
 
 # 训练配置
-batch_size = 16  # 如果显存不够(OOM)，调小至 64 或 32
+batch_size = 64  # 如果显存不够(OOM)，调小至 64 或 32
 max_iters = 10000 # 步数 = 总Token / (batch_size * context_length)
 eval_interval = 500
 save_interval = 1000

@@ -41,7 +41,7 @@ class Embedding(nn.Module):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         
-        # 1. 手动创建嵌入矩阵参数
+        # 1. 创建嵌入矩阵参数
         # 形状为 (num_embeddings, embedding_dim)
         self.weight = nn.Parameter(
             torch.empty(num_embeddings, embedding_dim, device=device, dtype=dtype)
@@ -63,9 +63,7 @@ class Embedding(nn.Module):
         if not isinstance(token_ids, torch.LongTensor) and token_ids.dtype != torch.long:
             token_ids = token_ids.long()
             
-        # 3. 手动索引逻辑
-        # 在 PyTorch 中，对张量使用另一个张量进行索引会返回对应的行
-        # 这等价于 nn.Embedding 的内部操作
+        # 3. 索引逻辑
         return self.weight[token_ids]
 
 
@@ -118,10 +116,6 @@ class SwiGLU(nn.Module):
         # 按照公式：W2( SiLU(W1(x)) * W3(x) )
         
         # 第一路：经过 W1 后接 SiLU 激活
-        # 注意：文档提到可以使用 torch.sigmoid，手动实现 SiLU 如下：
-        # gate = self.w1(x)
-        # gate = gate * torch.sigmoid(gate)
-        # 或者直接使用 PyTorch 内置的 silu
         gate = F.silu(self.w1(x))
         
         # 第二路：经过 W3
@@ -138,7 +132,7 @@ class RotaryPositionalEmbedding(nn.Module):
          # 1. 预计算 inv_freq (逆频率)
         # 根据公式: theta_{i,k} = i / (Theta ** ((2k-2)/d))
         # 这里 k 从 1 到 d/2，所以指数部分是 0, 2, 4, ..., d-2
-        # 我们计算: 1.0 / (Theta ** (torch.arange(0, d_k, 2) / d_k))
+        # 计算: 1.0 / (Theta ** (torch.arange(0, d_k, 2) / d_k))
         powers = torch.arange(0, d_k, 2, device=device).float() / d_k
         inv_freq = 1.0 / (theta ** powers)
         
@@ -160,7 +154,7 @@ class RotaryPositionalEmbedding(nn.Module):
         x: (..., seq_len, d_k) - 任意数量的 batch 维度
         token_positions: (..., seq_len) - 对应 x 中每个 token 的绝对位置
         """
-         # 1. 获取对应的 cos 和 sin 值
+        # 1. 获取对应的 cos 和 sin 值
         # 使用 token_positions 进行索引，形状变为 (..., seq_len, d_k/2)
         cos = self.cos_cached[token_positions]
         sin = self.sin_cached[token_positions]
