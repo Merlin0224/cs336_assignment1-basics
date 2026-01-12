@@ -14,8 +14,6 @@ def prepare_data(input_file, vocab_file, merges_file, output_file, special_token
     # 2. 读取并编码文本
     all_ids = []
     with open(input_file, 'r', encoding='utf-8') as f:
-        # 如果文件非常大，建议分块处理
-        # 这里的 f 本身就是一个字符串迭代器（按行读取）
         for token_id in tokenizer.encode_iterable(f):
             all_ids.append(token_id)
             

@@ -15,7 +15,7 @@ def main():
     # 按照文档要求，包含特殊 Token <|endoftext|>
     special_tokens = ["<|endoftext|>"]
     
-    # 调用你之前实现的训练函数
+    # 调用训练函数
     # 注意：如果训练太慢，请确保你的 train_bpe 使用了字典计数优化
     vocab, merges = train_bpe(
         input_path=input_path,
@@ -23,7 +23,6 @@ def main():
         special_tokens=special_tokens
     )
 
-    # 保存结果（使用之前讨论过的保存逻辑）
     # 保存词表
     serializable_vocab = {k: v.hex() for k, v in vocab.items()}
     with open(vocab_output, "w", encoding="utf-8") as f:

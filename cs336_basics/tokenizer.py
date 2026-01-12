@@ -247,7 +247,7 @@ def _process_chunk(text_chunk):
         counts[tuple(word.encode("utf-8"))] += 1
     return counts
 
-def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]):
+def train_bpe_Multiprocessing(input_path: str, vocab_size: int, special_tokens: list[str]):
     # 1. 初始化词表 (0-255 为基础字节)
     vocab = {i: bytes([i]) for i in range(256)}
     current_id = 256
@@ -265,7 +265,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]):
     # 如果 special_tokens 有多个，取第一个作为分隔符（通常是 TinyStories 的需求）
     sep = special_tokens[0] if special_tokens else None
     if sep and sep in full_text:
-        # 我们保留分隔符，但在统计时不合并它
+        # 保留分隔符，但在统计时不合并它
         documents = full_text.split(sep)
     else:
         documents = [full_text]
@@ -331,8 +331,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]):
             while i < len(word_tuple):
                 if i < len(word_tuple) - 1 and word_tuple[i] == p1 and word_tuple[i+1] == p2:
                     # 在更新 word_counts 的同时，更新 pair_counts 是一项进阶优化
-                    # 这里为了代码清晰，采用每轮重算 pair_counts 的折中方案
-                    # 如果还是慢，可以尝试在合并时原位加减 pair_counts 的计数
+                    # 采用每轮重算 pair_counts 的折中方案
                     new_word.append(current_id)
                     i += 2
                 else:

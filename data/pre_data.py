@@ -18,7 +18,6 @@ def process_data(input_path, output_path, tokenizer):
             ids.append(token_id)
             
     # 转换为 numpy 数组并指定为 uint16 (文档 Page 12 要求)
-    # 因为我们的 vocab_size 是 10,000，uint16 (0-65535) 完全够用
     ids_ndarray = np.array(ids, dtype=np.uint16)
     
     # 使用 tofile 保存为原始二进制格式，这比 np.save 更通用，
@@ -31,7 +30,6 @@ def process_data(input_path, output_path, tokenizer):
 
 def main():
     # 1. 加载训练好的分词器
-    # 请确保路径指向你之前保存的词表和合并规则
     tokenizer = Tokenizer.from_files(
         vocab_filepath="models/tokenizer_vocab.json",
         merges_filepath="models/tokenizer_merges.txt",
@@ -39,7 +37,6 @@ def main():
     )
     
     # 2. 处理训练集和验证集
-    # 请确保文件夹路径存在
     os.makedirs("data/processed", exist_ok=True)
     
     process_data("data/TinyStories_train.txt", "data/processed/train.bin", tokenizer)

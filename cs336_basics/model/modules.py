@@ -72,7 +72,7 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.eps = eps
         self.d_model = d_model
-        # 可学习的参数w，初始化为 1
+        # 可学习的参数g，初始化为 1
         self.weight = nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
         self._init_weight()
 

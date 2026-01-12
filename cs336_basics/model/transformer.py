@@ -152,7 +152,6 @@ class TransformerLM(nn.Module):
         
             # 4. 应用 Top-p 过滤
             if top_p < 1.0:
-                # 这里使用 torch.softmax 也可以，或者使用你自定义的 softmax 函数
                 probs = torch.softmax(logits, dim=-1)
                 sorted_probs, sorted_indices = torch.sort(probs, descending=True)
                 cumulative_probs = torch.cumsum(sorted_probs, dim=-1)

@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from cs336_basics.tokenizer import Tokenizer # 替换为你自己的路径
+from cs336_basics.tokenizer import Tokenizer 
 
 def tokenize_and_save(input_path, output_path, tokenizer):
     print(f"正在编码 {input_path}...")
@@ -8,8 +8,7 @@ def tokenize_and_save(input_path, output_path, tokenizer):
     # 记录总 token 数
     token_count = 0
     
-    # 使用之前实现的迭代编码器，避免内存爆炸
-    # 假设你的 Tokenizer 有 encode_iterable 方法
+    # 使用迭代编码器，避免内存爆炸
     with open(input_path, 'r', encoding='utf-8') as f:
         # 我们一次读入一大块，或者逐行读入
         ids = []
@@ -26,7 +25,7 @@ def tokenize_and_save(input_path, output_path, tokenizer):
 
 # 运行示例
 if __name__ == "__main__":
-    # 加载你训练好的分词器
+    # 加载训练好的分词器
     tokenizer = Tokenizer.from_files(
         vocab_filepath="models/tokenizer_vocab.json",
         merges_filepath="models/tokenizer_merges.txt",

@@ -12,6 +12,8 @@ from cs336_basics.trainer.utils import cross_entropy
 from cs336_basics.trainer.utils import gradient_clipping
 from cs336_basics.trainer.check_point import save_checkpoint, load_checkpoint
 
+# 限制 PyTorch 显存管理的扩张
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 # --- 1. 配置超参数 (参考文档 Page 41) ---
 # 模型配置
 vocab_size = 10000
@@ -23,8 +25,8 @@ d_ff = 1344
 theta = 10000.0
 
 # 训练配置
-batch_size = 16  # 128，如果显存不够(OOM)，调小至 64 或 32以下
-max_iters = 10000 * 8 # 步数 = 总Token / (batch_size * context_length)
+batch_size = 16  
+max_iters = 10000 # 步数 = 总Token / (batch_size * context_length)
 eval_interval = 500
 save_interval = 1000
 log_interval = 10
@@ -62,6 +64,7 @@ def estimate_loss(model):
         loss = cross_entropy(logits, Y)
         losses.append(loss.item())
     model.train()
+    torch.cuda.empty_cache() # 强制释放评估时的显存碎片
     return np.mean(losses)
 
 # --- 3. 初始化模型、优化器 ---
@@ -71,31 +74,40 @@ model = TransformerLM(
 ).to(device)
 
 optimizer = AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
-
+scaler = torch.amp.GradScaler('cuda') # 初始化缩放器
 # --- 4. 训练循环 ---
 start_time = time.time()
 best_val_loss = float('inf')
+
+accumulation_steps = 8  # 16 * 8 = 128 (模拟文档建议的有效 batch size)
 
 for it in range(max_iters):
     # 更新学习率
     lr = get_lr_cosine_schedule(it, learning_rate, min_lr, warmup_iters, lr_decay_iters)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-
-    # 前向传播
-    X, Y = get_batch(train_data)
-    logits = model(X)
-    loss = cross_entropy(logits, Y)
-
-    # 反向传播
-    optimizer.zero_grad()
-    loss.backward()
     
-    # 梯度裁剪 (Page 34)
+    optimizer.zero_grad()
+    # 模拟大的 batch size
+    for _ in range(accumulation_steps):
+        X, Y = get_batch(train_data)
+        
+        # 混合精度开启
+        with torch.amp.autocast('cuda'):
+            logits = model(X)
+            # 注意：loss 需要除以累加步数
+            loss = cross_entropy(logits, Y) / accumulation_steps
+        
+        scaler.scale(loss).backward()
+
+
+    # 累加完成后，先 unscale 梯度，再进行裁剪
+    scaler.unscale_(optimizer) 
     gradient_clipping(model.parameters(), max_norm=1.0)
     
-    # 优化步
-    optimizer.step()
+    # 使用 scaler 进行 step 和 update
+    scaler.step(optimizer)
+    scaler.update()
 
     # 日志记录
     if it % log_interval == 0:
@@ -110,6 +122,6 @@ for it in range(max_iters):
         
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            save_checkpoint(model, optimizer, it, "models/best_model.pt")
+            save_checkpoint(model, optimizer, it, "models/best_model_AMP_GA.pt")
 
 print("训练结束！")
