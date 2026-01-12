@@ -1,19 +1,14 @@
 
 
-这份技术报告旨在记录并指导初学者如何从零开始构建一个现代 Transformer 语言模型。本实验基于斯坦福 CS336 课程框架，重点在于**从底层矩阵运算实现所有组件**，而非调用现成的库。
+这份报告旨在记录并指导初学者如何从零开始构建一个现代 Transformer 语言模型。本实验基于斯坦福 CS336 课程框架，重点在于**从底层矩阵运算实现所有组件**，而非调用现成的库。
 
-  
+由于时间原因，本项目完整实现了前四个阶段（分词器、架构实现、训练基础设施、TinyStories 训练与生成），第五阶段（消融实验与排行榜冲刺）留作未来改进。显卡为3050，以下是简要的工作内容说明：
 
-由于时间原因，本项目完整实现了前四个阶段（分词器、架构实现、训练基础设施、TinyStories 训练与生成），第五阶段（消融实验与排行榜冲刺）留作未来改进。以下是简要的工作内容说明
-
-  
-  
 
 ### 第一阶段：文本预处理与 BPE 分词器 (Section 2)
 
 这是实验的基石。如果分词器有误，后续模型训练将无法收敛。
 
-  
 
 1.  **BPE 训练算法**：
 
@@ -51,7 +46,6 @@
 
 有了模型，需要一套稳定的训练系统。
 
-  
 
 1.  **损失函数**：实现数值稳定的 `cross_entropy`（使用 log-sum-exp 技巧）。
 
@@ -79,7 +73,6 @@
 
 2.  **文本生成**：实现带有 **Temperature（温度）** 和 **Nucleus Sampling（Top-p 采样）** 的解码函数。
 
-3.  **性能分析**：完成 FLOPs 计数（Problem `transformer_accounting`），理解模型规模与计算量的关系。
 
   
 
@@ -97,8 +90,6 @@
 
 2.  **OpenWebText 训练**：在更真实的数据集上进行训练，观察模型泛化能力的差异。
 
-3.  **Leaderboard 提交**：尝试高级优化技巧（如 Weight Tying 权重共享、改变初始化方案等），在 1.5 小时 H100 限时内通过优化超参数争取最低 Loss。
-
   
   
   
@@ -113,14 +104,12 @@
 
 分词器是语言模型的“眼睛”。它的质量直接决定了模型处理文本的效率和覆盖度。本项目实现了 **Byte-level BPE (Byte-Pair Encoding)**，这是一种能够处理任何 Unicode 字符串且永远不会产生“未知词（OOV）”的技术。
 
-  
+
 
 ## 1. 核心理论：从字节开始
 
-  
 
 不同于早期的分词器，字节级 BPE 将文本视为 **UTF-8 字节流**。
-
   
 
 ### 1.1 Unicode 与 UTF-8 的处理
@@ -151,7 +140,7 @@ $$CR = \frac{B_{total}}{T_{total}}$$
 
   
 
-训练过程是一个迭代合并最频繁相邻单元的贪心过程，详见于\cs336_basics\tarin.py
+训练过程是一个迭代合并最频繁相邻单元的贪心过程。
 
   
 
@@ -267,31 +256,64 @@ if special_tokens:
 选定 `best_pair` $(p_1, p_2)$ 后，将 $p_1$ 和 $p_2$ 的字节内容拼接，分配一个新的 ID，并将这次合并操作记录在 `merges` 列表中。遍历所有单词，将其中所有的 $(p_1, p_2)$ 替换为 `current_id`。
 
   
+  
 
-## 3. 性能优化：处理 4.6 亿 Token 的经验
+### 补充：多进程并行预分词 (Multiprocessing)
+
+正则匹配是计算密集型任务，可以利用 Python 的 `multiprocessing.Pool` 将语料库切块并行处理，加快预分词。
+
+```python
+    # 使用进程池并行统计词频
+
+    num_workers = max(1, multiprocessing.cpu_count() - 1)
+
+    # 将文档列表分成 num_workers 个块
+
+    chunk_size = (len(documents) + num_workers - 1) // num_workers
+
+    doc_chunks = [sep.join(documents[i:i + chunk_size]) for i in range(0, len(documents), chunk_size)]
 
   
 
-在 RTX 3050 环境下处理 TinyStories 全量数据（约 465M Tokens）时，直接循环会导致程序卡死。采用了以下两项关键优化：
+    with multiprocessing.Pool(processes=num_workers) as pool:
+
+        # 并行执行 _process_chunk
+
+        chunk_counters = pool.map(_process_chunk, doc_chunks)
 
   
 
-### 3.1 词频字典计数法
+    # 聚合所有进程的结果
 
-不要在 4.6 亿个元素的巨型列表上扫描。先利用正则统计唯一词的频次（例如 `{" once": 100000, " upon": 95000, ...}`）。
+    word_counts = Counter()
 
-  
-  
+    for c in chunk_counters:
 
-### 3.2 多进程并行预分词 (Multiprocessing)
+        word_counts.update(c)
 
-正则匹配是计算密集型任务。利用 Python 的 `multiprocessing.Pool` 将语料库切块并行处理，在多核 CPU 下，预分词时间从 20 分钟缩短至 **2 分钟**以内。
+```
 
-  
-  
 
----
 
+进程池中的工人函数：处理一个文本块并返回词频统计
+
+```python
+def _process_chunk(text_chunk):
+
+    counts = Counter()
+
+    # 使用 finditer 节省内存，避免产生巨大的列表
+
+    for match in re.finditer(GPT2_PAT, text_chunk):
+
+        word = match.group()
+
+        # 将单词转为字节元组
+
+        counts[tuple(word.encode("utf-8"))] += 1
+
+    return counts
+```
   
   
 
@@ -624,7 +646,51 @@ $$g \leftarrow g \cdot \frac{M}{\|g\|_2 + \epsilon}$$
 
 *   **优势**：操作系统会负责缓存管理，我们只需要维护一个指针随机采样 Batch 即可，内存占用极低且恒定。
 
-  
+```python
+def prepare_data(input_file, vocab_file, merges_file, output_file, special_tokens=["<|endoftext|>"]):
+
+    # 1. 加载分词器
+
+    tokenizer = Tokenizer.from_files(
+
+        vocab_filepath=vocab_file,
+
+        merges_filepath=merges_file,
+
+        special_tokens=special_tokens
+
+    )
+
+    print(f"正在处理 {input_file}...")
+
+    # 2. 读取并编码文本
+
+    all_ids = []
+
+    with open(input_file, 'r', encoding='utf-8') as f:
+
+        # 如果文件非常大，建议分块处理
+
+        # 这里的 f 本身就是一个字符串迭代器（按行读取）
+
+        for token_id in tokenizer.encode_iterable(f):
+
+            all_ids.append(token_id)
+
+    # 3. 转换为 uint16 numpy 数组 (文档 Page 12 要求)
+
+    ids_array = np.array(all_ids, dtype=np.uint16)
+
+    # 4. 保存为二进制文件
+
+    # 使用 tofile 直接保存原始字节，或者使用 np.save
+
+    ids_array.tofile(output_file)
+
+    print(f"处理完成！Token 总数: {len(ids_array)}")
+
+    print(f"文件已保存至: {output_file}")
+```
 
 ### 5.2 状态快照 (Checkpointing)
 
@@ -639,7 +705,7 @@ $$g \leftarrow g \cdot \frac{M}{\|g\|_2 + \epsilon}$$
 
 ---
 
-# 第四阶段：模型训练与生成 —— 极简主义的高效实践
+# 第四阶段：模型训练与生成 
 
 在本阶段，我们将前三个阶段构建的所有组件整合进 `train.py`。
 
@@ -648,15 +714,104 @@ $$g \leftarrow g \cdot \frac{M}{\|g\|_2 + \epsilon}$$
 在我们的 `train.py` 实现中，选择了最直接、最透明的训练流程。
 
 ### 1.1 批次配置
-*   **物理 Batch Size**: 设定为 `16`。
-*   **序列长度**: `256`。
+```python
+# 模型配置
+
+vocab_size = 10000
+
+context_length = 256
+
+num_layers = 4
+
+num_heads = 16
+
+d_model = 512
+
+d_ff = 1344
+
+theta = 10000.0
+
+  
+
+# 训练配置
+
+batch_size = 16  # 128，如果显存不够(OOM)，调小至 64 或 32以下
+
+max_iters = 10000 * 8 # 步数 = 总Token / (batch_size * context_length)
+
+eval_interval = 500
+
+save_interval = 1000
+
+log_interval = 10
+
+  
+
+# 优化器配置
+
+learning_rate = 6e-4
+
+warmup_iters = 500
+
+lr_decay_iters = 10000 # 通常等于 max_iters
+
+min_lr = 6e-5 # learning_rate / 10
+
+weight_decay = 0.1
+
+beta1, beta2 = 0.9, 0.95
+```
 
 ### 1.2 核心训练循环
+
 代码严格遵循以下标准流程：
+
 1.  **动态学习率更新**: 每一步迭代都通过 `get_lr_cosine_schedule` 手动计算并覆盖 `optimizer.param_groups` 中的 `lr`。
 2.  **前向传播与 Loss 计算**: 使用自定义 `cross_entropy` 计算 Logits 与 Targets 的距离。
 3.  **梯度裁剪 (Gradient Clipping)**: 在 `optimizer.step()` 之前，强制执行 $\|g\|_2 \le 1.0$。这一步对于小 Batch 训练至关重要，它抵消了采样随机性带来的梯度冲击。
+```python
+start_time = time.time()
 
+best_val_loss = float('inf')
+
+  
+
+for it in range(max_iters):
+
+    # 更新学习率
+
+    lr = get_lr_cosine_schedule(it, learning_rate, min_lr, warmup_iters, lr_decay_iters)
+
+    for param_group in optimizer.param_groups:
+
+        param_group['lr'] = lr
+
+  
+
+    # 前向传播
+
+    X, Y = get_batch(train_data)
+
+    logits = model(X)
+
+    loss = cross_entropy(logits, Y)
+
+  
+
+    # 反向传播
+
+    optimizer.zero_grad()
+
+    loss.backward()
+
+    # 梯度裁剪 (Page 34)
+
+    gradient_clipping(model.parameters(), max_norm=1.0)
+
+    # 优化步
+
+    optimizer.step()
+```
 ---
 
 ## 2. 指标分析：困惑度 (Perplexity)
@@ -670,6 +825,34 @@ $$PP = \exp(\text{Validation Loss})$$
 *   **最终阶段 (Iter 10000)**: `val_loss` 降至 1.90 左右，`perplexity` 降至约 **6.68**。
 *   **结论**: 困惑度的迅速下降证明了模型从“随机乱撞”到“精准预测”的进化。
 
+```python
+    # 日志记录
+
+    if it % log_interval == 0:
+
+        elapsed = time.time() - start_time
+
+        print(f"Iter {it}: loss {loss.item():.4f}, lr {lr:.2e}, time {elapsed:.2f}s")
+
+  
+
+    # 评估与保存
+
+    if it % eval_interval == 0:
+
+        val_loss = estimate_loss(model)
+
+        val_perplexity = math.exp(val_loss)
+
+        print(f">>> EVAL: iter {it}, val_loss {val_loss:.4f}, perplexity {val_perplexity:.2f}")
+
+        if val_loss < best_val_loss:
+
+            best_val_loss = val_loss
+
+            save_checkpoint(model, optimizer, it, "models/best_model.pt")
+```
+
 ---
 
 ## 3. 文本生成：自回归解码逻辑
@@ -678,15 +861,176 @@ $$PP = \exp(\text{Validation Loss})$$
 
 1.  **Context Window 动态滑动**: 在生成新 Token 时，始终通过 `curr_ids[:, -self.context_length:]` 截取最新的 256 个 Token。这确保了在长文本生成时，RoPE 旋转位置编码不会超出预计算的缓存边界。
 2.  **Top-p (核采样)**: 设定 `top_p=0.9`，有效地过滤了 Logits 分布中的长尾噪声，使生成的故事在逻辑连贯的同时具备多样性。
+```python
+def generate(self, prompt_ids, max_new_tokens, temperature=1.0, top_p=0.9, eos_token_id=None):
 
+        """
+
+        self: 类的实例引用
+
+        prompt_ids: 输入的起始 token IDs (batch_size, seq_len)
+
+        max_new_tokens: 最大生成长度
+
+        eos_token_id: 终止符的 ID (需从外部传入，如 256)
+
+        """
+
+        self.eval()
+
+        curr_ids = prompt_ids
+
+        for _ in range(max_new_tokens):
+
+            # 1. 裁剪输入长度，不能超过模型的最大上下文长度
+
+            # 使用 self.context_length 访问类属性
+
+            input_ids = curr_ids[:, -self.context_length:]
+
+            # 2. 前向传播拿到最后一个位置的 logits
+
+            # 调用 self(input_ids) 相当于调用 self.forward
+
+            logits = self(input_ids)[:, -1, :] # 形状 (batch_size, vocab_size)
+
+            # 3. 应用温度缩放
+
+            logits = logits / max(temperature, 1e-5)
+
+            # 4. 应用 Top-p 过滤
+
+            if top_p < 1.0:
+
+                probs = torch.softmax(logits, dim=-1)
+
+                sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+
+                cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+                # 逻辑修正：计算掩码
+
+                sorted_indices_to_remove = cumulative_probs > top_p
+
+                # 保证至少保留一个最可能的 token (防止 top_p 太小导致全被删掉)
+
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+
+                sorted_indices_to_remove[..., 0] = 0
+
+                # 将掩码映射回原始 indices 顺序
+
+                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+
+                logits[indices_to_remove] = float('-inf')
+
+  
+
+            # --- 注意：以下逻辑必须缩进在 if top_p 之外，但在 for 循环之内 ---
+
+            # 5. 采样
+
+            probs = torch.softmax(logits, dim=-1)
+
+            next_id = torch.multinomial(probs, num_samples=1)
+
+            # 6. 拼接新生成的 token
+
+            curr_ids = torch.cat((curr_ids, next_id), dim=1)
+
+            # 7. 停止条件检查：如果生成了终止符则退出循环
+
+            if eos_token_id is not None and next_id.item() == eos_token_id:
+
+                break
+
+        return curr_ids
+```
 ---
+### 补充：**梯度累加 (Gradient Accumulation)** 和 **自动混合精度 (AMP)**
+如果显存太小，可以在训练过程中采用以下方法：
+```python
+scaler = torch.amp.GradScaler('cuda') # 初始化缩放器
 
-## 4. 训练成果展示 (TinyStories)
+start_time = time.time()
 
-在 RTX 3050 上用 **55 分钟** 跑完 10,000 步后的生成样例：
+best_val_loss = float('inf')
 
-> **Prompt**: "Once upon a time, a little girl named Lily found a magic"
->
-> **Output**: "...Lily found a shiny red apple... she showed it to her mommy... they saw a beautiful diamond. It was very pretty! Lily and her mommy held the diamond in her hand..."
----
+accumulation_steps = 8  # 16 * 8 = 128 (模拟文档建议的有效 batch size)
 
+  
+
+for it in range(max_iters):
+
+    # 更新学习率
+
+    lr = get_lr_cosine_schedule(it, learning_rate, min_lr, warmup_iters, lr_decay_iters)
+
+    for param_group in optimizer.param_groups:
+
+        param_group['lr'] = lr
+
+    optimizer.zero_grad()
+
+    # 模拟大的 batch size
+
+    for _ in range(accumulation_steps):
+
+        X, Y = get_batch(train_data)
+
+        # 混合精度开启
+
+        with torch.amp.autocast('cuda'):
+
+            logits = model(X)
+
+            # 注意：loss 需要除以累加步数
+
+            loss = cross_entropy(logits, Y) / accumulation_steps
+
+        scaler.scale(loss).backward()
+
+  
+  
+
+    # 累加完成后，先 unscale 梯度，再进行裁剪
+
+    scaler.unscale_(optimizer)
+
+    gradient_clipping(model.parameters(), max_norm=1.0)
+
+    # 使用 scaler 进行 step 和 update
+
+    scaler.step(optimizer)
+
+    scaler.update()
+
+  
+
+    # 日志记录
+
+    if it % log_interval == 0:
+
+        elapsed = time.time() - start_time
+
+        print(f"Iter {it}: loss {loss.item():.4f}, lr {lr:.2e}, time {elapsed:.2f}s")
+
+  
+
+    # 评估与保存
+
+    if it % eval_interval == 0:
+
+        val_loss = estimate_loss(model)
+
+        val_perplexity = math.exp(val_loss)
+
+        print(f">>> EVAL: iter {it}, val_loss {val_loss:.4f}, perplexity {val_perplexity:.2f}")
+
+        if val_loss < best_val_loss:
+
+            best_val_loss = val_loss
+
+            save_checkpoint(model, optimizer, it, "models/best_model_AMP_GA.pt")
+```
+效果很好，缩短了近一半的时间。
